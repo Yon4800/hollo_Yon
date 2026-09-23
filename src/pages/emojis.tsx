@@ -1,5 +1,5 @@
 import { getLogger } from "@logtape/logtape";
-import { inArray, isNotNull } from "drizzle-orm";
+import { count, inArray, isNotNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { csrf } from "hono/csrf";
 import mime from "mime";
@@ -414,6 +414,9 @@ emojis.get("/import", async (c) => {
       };
     }
   }
+  const importedCount = c.req.query("imported");
+  const importError = c.req.query("error");
+
   return c.html(
     <DashboardLayout title="Hollo: Import custom emojis" selectedMenu="emojis">
       <header class="mb-6">
@@ -429,116 +432,178 @@ emojis.get("/import", async (c) => {
           Import custom emojis
         </h1>
         <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          Import custom emojis discovered on peer servers.
+          Import custom emojis discovered on peer servers or directly from an
+          instance.
         </p>
       </header>
-      <form method="post" class="space-y-4">
-        <div class="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800">
-          <table class="w-full text-sm">
-            <thead class="bg-neutral-50 text-xs uppercase tracking-wider text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400">
-              <tr>
-                <th class="w-10 px-3 py-2 text-left">
-                  <span class="sr-only">Select</span>
-                </th>
-                <th class="px-3 py-2 text-left font-semibold">Shortcode</th>
-                <th class="px-3 py-2 text-left font-semibold">Domain</th>
-                <th class="px-3 py-2 text-left font-semibold">Image</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-900">
-              {Object.values(emojis).map(({ id, shortcode, url, domain }) => {
-                const previewUrl = proxyUrl(url, c.req.url);
-                return (
-                  <tr>
-                    <td class="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        id={id}
-                        name="import"
-                        value={JSON.stringify({ shortcode, url })}
-                        aria-label={`:${shortcode}:`}
-                        class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
-                      />
-                    </td>
-                    <td class="px-3 py-2">
-                      <label
-                        htmlFor={id}
-                        class="font-mono text-neutral-900 dark:text-neutral-100"
-                      >
-                        :{shortcode}:
-                      </label>
-                    </td>
-                    <td class="px-3 py-2 text-neutral-700 dark:text-neutral-300">
-                      <label htmlFor={id}>{domain}</label>
-                    </td>
-                    <td class="px-3 py-2">
-                      <label htmlFor={id}>
-                        {previewUrl == null ? (
-                          <span class="text-xs text-neutral-500 dark:text-neutral-400">
-                            :{shortcode}:
-                          </span>
-                        ) : (
-                          <img
-                            src={previewUrl}
-                            alt={`:${shortcode}:`}
-                            class="h-6 w-auto"
-                          />
-                        )}
-                      </label>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+
+      {importedCount != null && (
+        <div class="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+          Successfully imported {importedCount} custom emojis!
         </div>
-        <div class="grid gap-4 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900 sm:grid-cols-2">
-          <div>
+      )}
+
+      {importError != null && (
+        <div class="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          Error: {importError}
+        </div>
+      )}
+
+      <section class="mb-8 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
+        <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+          Bulk import from Misskey / Mastodon instance
+        </h2>
+        <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+          Fetch and import all public custom emojis directly from another
+          instance (e.g.,{" "}
+          <code class="font-mono text-brand-700 dark:text-brand-400">
+            misskey.io
+          </code>
+          ).
+        </p>
+        <form
+          method="post"
+          action="/emojis/import-instance"
+          class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end"
+        >
+          <div class="flex-1">
             <label
-              htmlFor="import-category"
+              htmlFor="instance-host"
               class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
             >
-              Category
-            </label>
-            <select
-              id="import-category"
-              name="category"
-              class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900"
-              onchange="this.form.new.disabled = this.value != 'new'"
-            >
-              <option>None</option>
-              <option value="new">New category</option>
-              {[...categories].map((category) => (
-                <option value={`category:${category}`}>{category}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label
-              htmlFor="import-new-category"
-              class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
-            >
-              New category
+              Instance host
             </label>
             <input
-              id="import-new-category"
+              id="instance-host"
               type="text"
-              name="new"
-              disabled={true}
-              aria-label="New category"
-              class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900"
+              name="host"
+              placeholder="misskey.io"
+              required
+              class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900"
             />
           </div>
-        </div>
-        <div class="flex justify-end">
           <button
             type="submit"
-            class="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700 dark:bg-brand-700 dark:hover:bg-brand-800"
+            class="inline-flex items-center justify-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700 dark:bg-brand-700 dark:hover:bg-brand-800"
           >
-            Import selected emojis
+            <span class="i-lucide-download" aria-hidden="true" />
+            Import from instance
           </button>
-        </div>
-      </form>
+        </form>
+      </section>
+
+      <section>
+        <h2 class="mb-3 text-base font-semibold text-neutral-900 dark:text-neutral-100">
+          Discovered emojis on peer servers
+        </h2>
+        <form method="post" class="space-y-4">
+          <div class="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800">
+            <table class="w-full text-sm">
+              <thead class="bg-neutral-50 text-xs uppercase tracking-wider text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400">
+                <tr>
+                  <th class="w-10 px-3 py-2 text-left">
+                    <span class="sr-only">Select</span>
+                  </th>
+                  <th class="px-3 py-2 text-left font-semibold">Shortcode</th>
+                  <th class="px-3 py-2 text-left font-semibold">Domain</th>
+                  <th class="px-3 py-2 text-left font-semibold">Image</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-900">
+                {Object.values(emojis).map(({ id, shortcode, url, domain }) => {
+                  const previewUrl = proxyUrl(url, c.req.url);
+                  return (
+                    <tr>
+                      <td class="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          id={id}
+                          name="import"
+                          value={JSON.stringify({ shortcode, url })}
+                          aria-label={`:${shortcode}:`}
+                          class="size-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-200 dark:border-neutral-700 dark:bg-neutral-950 dark:focus:ring-brand-900"
+                        />
+                      </td>
+                      <td class="px-3 py-2">
+                        <label
+                          htmlFor={id}
+                          class="font-mono text-neutral-900 dark:text-neutral-100"
+                        >
+                          :{shortcode}:
+                        </label>
+                      </td>
+                      <td class="px-3 py-2 text-neutral-700 dark:text-neutral-300">
+                        <label htmlFor={id}>{domain}</label>
+                      </td>
+                      <td class="px-3 py-2">
+                        <label htmlFor={id}>
+                          {previewUrl == null ? (
+                            <span class="text-xs text-neutral-500 dark:text-neutral-400">
+                              :{shortcode}:
+                            </span>
+                          ) : (
+                            <img
+                              src={previewUrl}
+                              alt={`:${shortcode}:`}
+                              class="h-6 w-auto"
+                            />
+                          )}
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div class="grid gap-4 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="import-category"
+                class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
+              >
+                Category
+              </label>
+              <select
+                id="import-category"
+                name="category"
+                class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900"
+                onchange="this.form.new.disabled = this.value != 'new'"
+              >
+                <option>None</option>
+                <option value="new">New category</option>
+                {[...categories].map((category) => (
+                  <option value={`category:${category}`}>{category}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="import-new-category"
+                class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
+              >
+                New category
+              </label>
+              <input
+                id="import-new-category"
+                type="text"
+                name="new"
+                disabled={true}
+                aria-label="New category"
+                class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:focus:ring-brand-900"
+              />
+            </div>
+          </div>
+          <div class="flex justify-end">
+            <button
+              type="submit"
+              class="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700 dark:bg-brand-700 dark:hover:bg-brand-800"
+            >
+              Import selected emojis
+            </button>
+          </div>
+        </form>
+      </section>
     </DashboardLayout>,
   );
 });
@@ -563,6 +628,136 @@ emojis.post("/import", async (c) => {
     }
   }
   return c.redirect("/emojis");
+});
+
+emojis.post("/import-instance", async (c) => {
+  const form = await c.req.formData();
+  let host = form.get("host")?.toString().trim();
+  if (!host) {
+    return c.redirect("/emojis/import?error=Host+is+required");
+  }
+  // Remove schema and path
+  host = host
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .trim();
+  if (!host) {
+    return c.redirect("/emojis/import?error=Invalid+host");
+  }
+
+  interface EmojiItem {
+    shortcode: string;
+    url: string;
+    category?: string | null;
+  }
+  const emojiList: EmojiItem[] = [];
+
+  try {
+    // 1. Try Misskey API: POST https://<host>/api/emojis
+    const misskeyRes = await fetch(`https://${host}/api/emojis`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (misskeyRes.ok) {
+      const data = (await misskeyRes.json()) as {
+        emojis?: Array<{
+          name: string;
+          url: string;
+          category?: string | null;
+        }>;
+      };
+      if (Array.isArray(data.emojis)) {
+        for (const emoji of data.emojis) {
+          if (emoji.name && emoji.url) {
+            emojiList.push({
+              shortcode: emoji.name.replace(/^:|:$/g, ""),
+              url: emoji.url,
+              category: emoji.category ?? null,
+            });
+          }
+        }
+      }
+    } else {
+      // 2. Fallback to Mastodon API: GET https://<host>/api/v1/custom_emojis
+      const mastoRes = await fetch(`https://${host}/api/v1/custom_emojis`, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(20000),
+      });
+      if (mastoRes.ok) {
+        const data = (await mastoRes.json()) as Array<{
+          shortcode: string;
+          url: string;
+          category?: string | null;
+        }>;
+        if (Array.isArray(data)) {
+          for (const emoji of data) {
+            if (emoji.shortcode && emoji.url) {
+              emojiList.push({
+                shortcode: emoji.shortcode.replace(/^:|:$/g, ""),
+                url: emoji.url,
+                category: emoji.category ?? null,
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    logger.error("Failed to fetch emojis from {host}: {error}", {
+      host,
+      error: err,
+    });
+    return c.redirect(
+      `/emojis/import?error=${encodeURIComponent(
+        err instanceof Error ? err.message : String(err),
+      )}`,
+    );
+  }
+
+  if (emojiList.length === 0) {
+    return c.redirect(
+      `/emojis/import?error=${encodeURIComponent(
+        "No custom emojis found or could not connect to instance",
+      )}`,
+    );
+  }
+
+  const [{ emojiCount: beforeCount }] = await db
+    .select({ emojiCount: count() })
+    .from(customEmojis);
+
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < emojiList.length; i += BATCH_SIZE) {
+    const batch = emojiList.slice(i, i + BATCH_SIZE);
+    try {
+      await db
+        .insert(customEmojis)
+        .values(
+          batch.map((e) => ({
+            shortcode: e.shortcode,
+            url: e.url,
+            category: e.category,
+          })),
+        )
+        .onConflictDoNothing({ target: customEmojis.shortcode });
+    } catch (err) {
+      logger.error("Failed to insert emoji batch from {host}: {error}", {
+        host,
+        error: err,
+      });
+    }
+  }
+
+  const [{ emojiCount: afterCount }] = await db
+    .select({ emojiCount: count() })
+    .from(customEmojis);
+
+  const importedCount = Math.max(0, afterCount - beforeCount);
+
+  return c.redirect(`/emojis/import?imported=${importedCount}`);
 });
 
 export default emojis;

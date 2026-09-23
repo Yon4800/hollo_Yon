@@ -10,7 +10,7 @@ services:
       DATABASE_URL: "postgres://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-database}"
       SECRET_KEY: "${SECRET_KEY}"
       LOG_LEVEL: "${LOG_LEVEL:-info}"
-      
+
       # Cloudflare (Proxy / Tunnel) 配下で必須の設定
       BEHIND_PROXY: "true"
 

@@ -53,4 +53,56 @@ describe.sequential("emojis", () => {
       shortcode: "test-emoji",
     });
   });
+
+  it("Imports emojis from a Misskey instance", async () => {
+    const formData = new FormData();
+    formData.append("host", "example-misskey.test");
+
+    const cookie = await getLoginCookie();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/emojis")) {
+        return new Response(
+          JSON.stringify({
+            emojis: [
+              {
+                name: "blob_smile",
+                url: "https://example-misskey.test/emojis/blob_smile.png",
+                category: "blobs",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return originalFetch(input, init);
+    };
+
+    try {
+      const response = await app.request("/emojis/import-instance", {
+        method: "POST",
+        body: formData,
+        headers: {
+          Cookie: cookie,
+          "Sec-Fetch-Site": "same-origin",
+        },
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("Location")).toBe(
+        "/emojis/import?imported=1",
+      );
+
+      const emoji = await db.query.customEmojis.findFirst();
+      expect(emoji).toMatchObject({
+        shortcode: "blob_smile",
+        url: "https://example-misskey.test/emojis/blob_smile.png",
+        category: "blobs",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
