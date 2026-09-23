@@ -1,0 +1,67 @@
+# Cloudflare configuration for Hollo (Cloudflare Tunnel + Cloudflare R2 / FS)
+services:
+  hollo:
+    image: yon4800/hollo:1.0
+    # Cloudflare Tunnel 経由でアクセスするため、外部公開ポートの開放は不要です。
+    # サーバーローカルから直接確認したい場合のみ以下の ports を有効にしてください。
+    # ports:
+    #   - "127.0.0.1:3000:3000"
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-database}"
+      SECRET_KEY: "${SECRET_KEY}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      
+      # Cloudflare (Proxy / Tunnel) 配下で必須の設定
+      BEHIND_PROXY: "true"
+
+      # --- [メディアストレージ設定: Cloudflare R2 を使用する場合] ---
+      DRIVE_DISK: s3
+      S3_REGION: auto
+      S3_BUCKET: "${R2_BUCKET}"
+      S3_ENDPOINT_URL: "https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+      STORAGE_URL_BASE: "${R2_PUBLIC_URL}"
+      AWS_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY}"
+      S3_FORCE_PATH_STYLE: "false"
+
+      # --- [メディアストレージ設定: ローカルファイル(FS)を使用する場合] ---
+      # R2 を使わずローカルストレージにする場合は上記 R2 設定をコメントアウトし、以下を有効化してください
+      # DRIVE_DISK: fs
+      # STORAGE_URL_BASE: "https://${DOMAIN}/assets/"
+      # FS_STORAGE_PATH: /var/lib/hollo
+
+      # メディアプロキシ (必要に応じて有効化)
+      # MEDIA_PROXY: off                # "proxy" または "cache"
+      # REMOTE_MEDIA_THUMBNAILS: "on"
+    depends_on:
+      - postgres
+    # DRIVE_DISK=fs を使う場合は以下のボリュームマウントを有効にしてください
+    # volumes:
+    #   - assets_data:/var/lib/hollo
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-password}"
+      POSTGRES_DB: "${POSTGRES_DB:-database}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Cloudflare Tunnel (自宅サーバーやVPSのポート開放不要で外部公開)
+  # Cloudflare Zero Trust のダッシュボードで作成した Tunnel トークンを設定してください
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN}"
+    depends_on:
+      - hollo
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  # DRIVE_DISK=fs を使う場合は以下も有効化
+  # assets_data:
