@@ -9,6 +9,7 @@ import db from "../db";
 import { loginRequired } from "../login";
 import { proxyUrl } from "../media-proxy";
 import { customEmojis } from "../schema";
+import { unzip } from "../zip";
 
 const logger = getLogger(["hollo", "pages", "emojis"]);
 
@@ -451,43 +452,42 @@ emojis.get("/import", async (c) => {
 
       <section class="mb-8 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
         <h2 class="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-          Bulk import from Misskey / Mastodon instance
+          Import from Zip file (Misskey export / Emoji pack)
         </h2>
         <p class="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          Fetch and import all public custom emojis directly from another
-          instance (e.g.,{" "}
-          <code class="font-mono text-brand-700 dark:text-brand-400">
-            misskey.io
-          </code>
-          ).
+          Upload a{" "}
+          <code class="font-mono text-brand-700 dark:text-brand-400">.zip</code>{" "}
+          file exported from Misskey or an emoji pack. Emojis and metadata will
+          be extracted and saved to your storage.
         </p>
         <form
           method="post"
-          action="/emojis/import-instance"
+          action="/emojis/import-zip"
+          encType="multipart/form-data"
           class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end"
         >
           <div class="flex-1">
             <label
-              htmlFor="instance-host"
+              htmlFor="zip-file"
               class="block text-sm font-medium text-neutral-800 dark:text-neutral-200"
             >
-              Instance host
+              Zip file
             </label>
             <input
-              id="instance-host"
-              type="text"
-              name="host"
-              placeholder="misskey.io"
+              id="zip-file"
+              type="file"
+              name="file"
+              accept=".zip,application/zip"
               required
-              class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-brand-900"
+              class="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm shadow-sm transition-colors file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1 file:text-sm file:font-medium hover:file:bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100 dark:file:bg-neutral-800 dark:file:text-neutral-200 dark:hover:file:bg-neutral-700"
             />
           </div>
           <button
             type="submit"
             class="inline-flex items-center justify-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700 dark:bg-brand-700 dark:hover:bg-brand-800"
           >
-            <span class="i-lucide-download" aria-hidden="true" />
-            Import from instance
+            <span class="i-lucide-upload" aria-hidden="true" />
+            Upload and import
           </button>
         </form>
       </section>
@@ -630,122 +630,144 @@ emojis.post("/import", async (c) => {
   return c.redirect("/emojis");
 });
 
-emojis.post("/import-instance", async (c) => {
+emojis.post("/import-zip", async (c) => {
   const form = await c.req.formData();
-  let host = form.get("host")?.toString().trim();
-  if (!host) {
-    return c.redirect("/emojis/import?error=Host+is+required");
-  }
-  // Remove schema and path
-  host = host
-    .replace(/^https?:\/\//i, "")
-    .replace(/\/.*$/, "")
-    .trim();
-  if (!host) {
-    return c.redirect("/emojis/import?error=Invalid+host");
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    return c.redirect("/emojis/import?error=Invalid+file");
   }
 
-  interface EmojiItem {
-    shortcode: string;
-    url: string;
-    category?: string | null;
-  }
-  const emojiList: EmojiItem[] = [];
-
+  let entries;
   try {
-    // 1. Try Misskey API: POST https://<host>/api/emojis
-    const misskeyRes = await fetch(`https://${host}/api/emojis`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(20000),
-    });
+    const arrayBuffer = await file.arrayBuffer();
+    entries = unzip(new Uint8Array(arrayBuffer));
+  } catch (err) {
+    logger.error("Failed to extract zip file: {error}", { error: err });
+    return c.redirect(
+      `/emojis/import?error=${encodeURIComponent(
+        err instanceof Error ? err.message : "Failed to extract zip",
+      )}`,
+    );
+  }
 
-    if (misskeyRes.ok) {
-      const data = (await misskeyRes.json()) as {
-        emojis?: Array<{
-          name: string;
-          url: string;
-          category?: string | null;
-        }>;
-      };
-      if (Array.isArray(data.emojis)) {
-        for (const emoji of data.emojis) {
-          if (emoji.name && emoji.url) {
-            emojiList.push({
-              shortcode: emoji.name.replace(/^:|:$/g, ""),
-              url: emoji.url,
-              category: emoji.category ?? null,
-            });
+  // Parse metadata if available (emojis.json / meta.json)
+  const metaMap = new Map<
+    string,
+    { shortcode: string; category?: string | null }
+  >();
+
+  for (const entry of entries) {
+    const lowerPath = entry.path.toLowerCase();
+    if (
+      lowerPath === "emojis.json" ||
+      lowerPath.endsWith("/emojis.json") ||
+      lowerPath === "meta.json" ||
+      lowerPath.endsWith("/meta.json")
+    ) {
+      try {
+        const text = new TextDecoder("utf-8").decode(entry.data);
+        const parsed = JSON.parse(text);
+
+        // Case 1: Misskey export format { emojis: [ { fileName: "...", emoji: { name: "...", category: "..." } } ] }
+        if (parsed && Array.isArray(parsed.emojis)) {
+          for (const item of parsed.emojis) {
+            const fileName = item.fileName ?? item.file;
+            const emojiObj = item.emoji ?? item;
+            const name = emojiObj?.name ?? item.name;
+            const category = emojiObj?.category ?? item.category ?? null;
+            if (fileName && name) {
+              metaMap.set(fileName.toLowerCase(), {
+                shortcode: name.replace(/^:|:$/g, ""),
+                category,
+              });
+            }
           }
-        }
-      }
-    } else {
-      // 2. Fallback to Mastodon API: GET https://<host>/api/v1/custom_emojis
-      const mastoRes = await fetch(`https://${host}/api/v1/custom_emojis`, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(20000),
-      });
-      if (mastoRes.ok) {
-        const data = (await mastoRes.json()) as Array<{
-          shortcode: string;
-          url: string;
-          category?: string | null;
-        }>;
-        if (Array.isArray(data)) {
-          for (const emoji of data) {
-            if (emoji.shortcode && emoji.url) {
-              emojiList.push({
-                shortcode: emoji.shortcode.replace(/^:|:$/g, ""),
-                url: emoji.url,
-                category: emoji.category ?? null,
+        } else if (Array.isArray(parsed)) {
+          // Case 2: Array format [ { name: "...", fileName: "...", category: "..." } ]
+          for (const item of parsed) {
+            const fileName =
+              item.fileName ??
+              item.file ??
+              (item.name ? `${item.name}.png` : null);
+            const name = item.name ?? item.shortcode;
+            if (fileName && name) {
+              metaMap.set(fileName.toLowerCase(), {
+                shortcode: name.replace(/^:|:$/g, ""),
+                category: item.category ?? null,
               });
             }
           }
         }
+      } catch (err) {
+        logger.warn("Could not parse json metadata in zip: {error}", {
+          error: err,
+        });
       }
     }
-  } catch (err) {
-    logger.error("Failed to fetch emojis from {host}: {error}", {
-      host,
-      error: err,
-    });
-    return c.redirect(
-      `/emojis/import?error=${encodeURIComponent(
-        err instanceof Error ? err.message : String(err),
-      )}`,
-    );
   }
 
-  if (emojiList.length === 0) {
-    return c.redirect(
-      `/emojis/import?error=${encodeURIComponent(
-        "No custom emojis found or could not connect to instance",
-      )}`,
-    );
-  }
+  const { drive } = await import("../storage");
+  const disk = drive.use();
 
   const [{ emojiCount: beforeCount }] = await db
     .select({ emojiCount: count() })
     .from(customEmojis);
 
-  const BATCH_SIZE = 100;
-  for (let i = 0; i < emojiList.length; i += BATCH_SIZE) {
-    const batch = emojiList.slice(i, i + BATCH_SIZE);
+  const supportedExtensions = new Set([
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+  ]);
+
+  for (const entry of entries) {
+    const extIndex = entry.path.lastIndexOf(".");
+    if (extIndex === -1) continue;
+    const ext = entry.path.slice(extIndex).toLowerCase();
+    if (!supportedExtensions.has(ext)) continue;
+
+    const parts = entry.path.split("/");
+    const fileName = parts[parts.length - 1];
+    const baseName = fileName.slice(0, fileName.lastIndexOf("."));
+    const parentFolder = parts.length > 1 ? parts[parts.length - 2] : null;
+
+    const meta =
+      metaMap.get(fileName.toLowerCase()) ??
+      metaMap.get(entry.path.toLowerCase());
+    const rawShortcode = meta?.shortcode ?? baseName;
+    const category =
+      meta?.category !== undefined ? meta.category : parentFolder;
+
+    // Sanitize shortcode
+    const shortcode = rawShortcode
+      .replace(/^:|:$/g, "")
+      .replace(/[^a-zA-Z0-9_-]/g, "_");
+    if (!shortcode) continue;
+
+    const contentType = mime.getType(ext) ?? "image/png";
+    const storagePath = `emojis/${shortcode}${ext}`;
+
     try {
+      await disk.put(storagePath, entry.data, {
+        contentType,
+        contentLength: entry.data.byteLength,
+        visibility: "public",
+      });
+      const url = await disk.getUrl(storagePath);
+
       await db
         .insert(customEmojis)
-        .values(
-          batch.map((e) => ({
-            shortcode: e.shortcode,
-            url: e.url,
-            category: e.category,
-          })),
-        )
+        .values({
+          shortcode,
+          url,
+          category: category ?? null,
+        })
         .onConflictDoNothing({ target: customEmojis.shortcode });
     } catch (err) {
-      logger.error("Failed to insert emoji batch from {host}: {error}", {
-        host,
+      logger.error("Failed to store emoji {shortcode}: {error}", {
+        shortcode,
         error: err,
       });
     }
