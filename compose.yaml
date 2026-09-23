@@ -4,7 +4,7 @@
 
 services:
   hollo:
-    image: ghcr.io/fedify-dev/hollo:canary
+    image: yon4800/hollo:1.0
     ports:
       - "3000:3000"
     environment:
