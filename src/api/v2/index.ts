@@ -79,6 +79,19 @@ app.get(
     }),
   ),
   async (c) => {
+    const enableSearch =
+      process.env["ENABLE_SEARCH"]?.trim()?.toLowerCase() !== "false";
+    const enableAccountSearch =
+      process.env["ENABLE_ACCOUNT_SEARCH"]?.trim()?.toLowerCase() !== "false";
+
+    if (!enableSearch && !enableAccountSearch) {
+      return c.json({
+        accounts: [],
+        statuses: [],
+        hashtags: [],
+      });
+    }
+
     const logger = getLogger(["hollo", "api", "v2", "search"]);
     const owner = c.get("accountOwner");
     const query = c.req.valid("query");
@@ -88,9 +101,10 @@ app.get(
     // Check if query is a WebFinger handle (e.g., @user@domain or user@domain)
     const isHandleQuery = HANDLE_PATTERN.test(q);
     // Remote lookup should only be attempted for URL or handle queries
-    const isResolvableQuery = isUrlQuery || isHandleQuery;
+    const isResolvableQuery =
+      (isUrlQuery && enableSearch) || (isHandleQuery && enableAccountSearch);
     const users =
-      query.offset < 1
+      enableAccountSearch && query.offset < 1
         ? await db.query.accounts.findMany({
             with: { successor: true },
             where: {
@@ -105,7 +119,7 @@ app.get(
           })
         : [];
     const statuses =
-      query.offset < 1
+      enableSearch && query.offset < 1
         ? await db.query.posts.findMany({
             where: {
               RAW: (posts, { and, eq, isNull, lte, or, sql }) =>
@@ -140,7 +154,10 @@ app.get(
         logger.warn("Failed to resolve object: {error}", { error });
       }
     }
-    if (query.type == null || query.type === "accounts") {
+    if (
+      enableAccountSearch &&
+      (query.type == null || query.type === "accounts")
+    ) {
       const hits = await db.query.accounts.findMany({
         where: { handle: { ilike: `%${q}%` } },
         limit: query.limit,
@@ -169,7 +186,7 @@ app.get(
         });
       }
     }
-    if (query.type == null || query.type === "statuses") {
+    if (enableSearch && (query.type == null || query.type === "statuses")) {
       // Skip full-text search for URL queries (already handled by cache lookup)
       // Only perform content search for non-URL queries
       if (!isUrlQuery) {

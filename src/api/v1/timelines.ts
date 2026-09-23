@@ -32,6 +32,7 @@ import {
 import {
   accountOwners,
   blocks,
+  follows,
   listMembers,
   listPosts,
   lists,
@@ -162,9 +163,28 @@ async function readTimelineSnapshot<T>(
 }
 
 function getTimelinePostFilterConditions(ownerId: Uuid): (SQL | undefined)[] {
+  const showReblogs =
+    process.env["SHOW_REBLOGS"]?.trim()?.toLowerCase() !== "false";
   return [
     // Hide future posts
     lte(posts.published, sql`NOW() + INTERVAL '5 minutes'`),
+    // Hide all shared posts if SHOW_REBLOGS is false:
+    showReblogs ? undefined : isNull(posts.sharingId),
+    // Hide shared posts from accounts with reblogs muted (shares = false):
+    showReblogs
+      ? or(
+          isNull(posts.sharingId),
+          notInArray(
+            posts.accountId,
+            db
+              .select({ followingId: follows.followingId })
+              .from(follows)
+              .where(
+                and(eq(follows.followerId, ownerId), eq(follows.shares, false)),
+              ),
+          ),
+        )
+      : undefined,
     // Hide the posts from the muted accounts:
     notInArray(
       posts.accountId,
@@ -401,6 +421,8 @@ app.get(
   async (c) => {
     const owner = c.get("accountOwner");
     const query = c.req.valid("query");
+    const showReblogs =
+      process.env["SHOW_REBLOGS"]?.trim()?.toLowerCase() !== "false";
     const { useMinId, lowerBound } = resolveTimelineCursor(query);
     const timeline = await readTimelineSnapshot(async (database) => {
       let timelineIds: { id: Uuid }[];
@@ -593,6 +615,26 @@ app.get(
                       .where(eq(blocks.blockedAccountId, owner.id)),
                   ),
                 ),
+                // Hide all shared posts if SHOW_REBLOGS is false:
+                showReblogs ? undefined : isNull(posts.sharingId),
+                // Hide shared posts from accounts with reblogs muted (shares = false):
+                showReblogs
+                  ? or(
+                      isNull(posts.sharingId),
+                      notInArray(
+                        posts.accountId,
+                        db
+                          .select({ followingId: follows.followingId })
+                          .from(follows)
+                          .where(
+                            and(
+                              eq(follows.followerId, owner.id),
+                              eq(follows.shares, false),
+                            ),
+                          ),
+                      ),
+                    )
+                  : undefined,
                 query.max_id == null ? undefined : lt(posts.id, query.max_id),
                 lowerBound == null ? undefined : gt(posts.id, lowerBound),
               )!,

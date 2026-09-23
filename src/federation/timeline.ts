@@ -119,6 +119,9 @@ export function shouldIncludePostInTimeline(
 ): boolean {
   if (post.accountId === owner.id) return true;
   if (shouldExcludePostFromTimeline(post, owner)) return false;
+  const showReblogs =
+    process.env["SHOW_REBLOGS"]?.trim()?.toLowerCase() !== "false";
+  if (!showReblogs && post.sharing != null) return false;
   for (const mention of post.mentions) {
     if (mention.accountId === owner.id) return true;
   }
@@ -127,6 +130,7 @@ export function shouldIncludePostInTimeline(
   }
   for (const follow of owner.account.following) {
     if (isApprovedFollow(follow) && follow.followingId === post.accountId) {
+      if (post.sharing != null && !follow.shares) return false;
       const replyTarget = post.replyTarget;
       return (
         replyTarget == null ||

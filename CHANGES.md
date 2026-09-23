@@ -6,6 +6,17 @@ Version 0.10.0
 
 To be released.
 
+ -  Added `ENABLE_SEARCH` and `ENABLE_ACCOUNT_SEARCH` environment variables to
+    allow operators to independently disable status/full-text search and account
+    search on Mastodon-compatible search endpoints.
+
+ -  Added support for muting reblogs/renotes per followed account via `reblogs`
+    parameter on `POST /api/v1/accounts/:id/follow`, and filtered out boosts
+    from muted accounts in home timeline queries and federation timeline ingestion.
+
+ -  Added `SHOW_REBLOGS` environment variable to globally control whether
+    shared posts (reblogs, boosts, renotes) appear in the home timeline.
+
  -  Upgraded Fedify to 2.3.8.  Fedify 2.3 adds an outbound delivery circuit
     breaker (enabled by default for queued outbox delivery),
     `MessageQueue.getDepth()` support, OpenTelemetry metrics for

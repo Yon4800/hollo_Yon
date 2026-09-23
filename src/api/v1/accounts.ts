@@ -405,6 +405,11 @@ app.get(
     }),
   ),
   async (c) => {
+    const enableAccountSearch =
+      process.env["ENABLE_ACCOUNT_SEARCH"]?.trim()?.toLowerCase() !== "false";
+    if (!enableAccountSearch) {
+      return c.json([]);
+    }
     const query = c.req.valid("query");
     const requestUrl = new URL(c.req.url);
     const handleLookup = HANDLE_PATTERN.test(query.q)
@@ -723,12 +728,63 @@ app.post(
       with: { owner: true },
     });
     if (following == null) return c.json({ error: "Record not found" }, 404);
+
+    let reblogs: boolean | undefined;
+    let notify: boolean | undefined;
+    let languages: string[] | undefined;
+    const contentType = c.req.header("Content-Type");
+    if (contentType?.match(/^application\/json(\s*;|$)/)) {
+      try {
+        const body = (await c.req.json()) as Record<string, unknown>;
+        if (typeof body.reblogs === "boolean") reblogs = body.reblogs;
+        else if (body.reblogs === "true" || body.reblogs === "false") {
+          reblogs = body.reblogs === "true";
+        }
+        if (typeof body.notify === "boolean") notify = body.notify;
+        else if (body.notify === "true" || body.notify === "false") {
+          notify = body.notify === "true";
+        }
+        if (Array.isArray(body.languages)) {
+          languages = body.languages.map((l) => String(l));
+        }
+      } catch {
+        // ignore malformed body
+      }
+    } else if (
+      contentType?.match(/^application\/x-www-form-urlencoded(\s*;|$)/) ||
+      contentType?.match(/^multipart\/form-data(\s*;|$)/)
+    ) {
+      try {
+        const body = await c.req.parseBody({ all: true });
+        if (typeof body.reblogs === "boolean") reblogs = body.reblogs;
+        else if (body.reblogs === "true" || body.reblogs === "false") {
+          reblogs = body.reblogs === "true";
+        }
+        if (typeof body.notify === "boolean") notify = body.notify;
+        else if (body.notify === "true" || body.notify === "false") {
+          notify = body.notify === "true";
+        }
+        if (Array.isArray(body.languages)) {
+          languages = body.languages.map((l) => String(l));
+        } else if (typeof body.languages === "string") {
+          languages = [body.languages];
+        }
+      } catch {
+        // ignore malformed body
+      }
+    }
+
     const fedCtx = federation.createContext(c.req.raw, undefined);
     const follow = await followAccount(
       db,
       fedCtx,
       { ...owner.account, owner },
       following,
+      {
+        shares: reblogs,
+        notify,
+        languages,
+      },
     );
     if (follow == null) {
       return c.json({ error: "The action is not allowed" }, 403);

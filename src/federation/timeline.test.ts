@@ -16,6 +16,7 @@ function makePost(
 ): Parameters<typeof shouldIncludePostInTimeline>[0] {
   return {
     accountId: AUTHOR_ID,
+    visibility: "public",
     mentions: [],
     sharing: null,
     replyTarget: null,
@@ -190,5 +191,75 @@ describe("timeline block filtering", () => {
         repliesPolicy: "followed",
       } as unknown as Parameters<typeof shouldIncludePostInList>[1]),
     ).toBe(false);
+  });
+
+  it("excludes shared posts when followed account has shares: false", () => {
+    expect.assertions(2);
+
+    const post = makePost({
+      accountId: AUTHOR_ID,
+      sharing: makePost({ accountId: "00000000-0000-0000-0000-000000000005" }),
+    });
+
+    const mutedOwner = makeOwner({
+      account: {
+        id: OWNER_ID,
+        following: [
+          {
+            ...makeFollow(AUTHOR_ID),
+            shares: false,
+          },
+        ],
+        blocks: [],
+        blockedBy: [],
+        mutes: [],
+      },
+    });
+
+    expect(shouldIncludePostInTimeline(post, mutedOwner)).toBe(false);
+
+    const unmutedOwner = makeOwner({
+      account: {
+        id: OWNER_ID,
+        following: [makeFollow(AUTHOR_ID)],
+        blocks: [],
+        blockedBy: [],
+        mutes: [],
+      },
+    });
+
+    expect(shouldIncludePostInTimeline(post, unmutedOwner)).toBe(true);
+  });
+
+  it("excludes shared posts when SHOW_REBLOGS is false", () => {
+    expect.assertions(1);
+
+    const originalShowReblogs = process.env.SHOW_REBLOGS;
+    try {
+      process.env.SHOW_REBLOGS = "false";
+      const post = makePost({
+        accountId: AUTHOR_ID,
+        sharing: makePost({
+          accountId: "00000000-0000-0000-0000-000000000005",
+        }),
+      });
+      const owner = makeOwner({
+        account: {
+          id: OWNER_ID,
+          following: [makeFollow(AUTHOR_ID)],
+          blocks: [],
+          blockedBy: [],
+          mutes: [],
+        },
+      });
+
+      expect(shouldIncludePostInTimeline(post, owner)).toBe(false);
+    } finally {
+      if (originalShowReblogs !== undefined) {
+        process.env.SHOW_REBLOGS = originalShowReblogs;
+      } else {
+        delete process.env.SHOW_REBLOGS;
+      }
+    }
   });
 });

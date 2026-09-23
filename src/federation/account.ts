@@ -584,6 +584,27 @@ export async function followAccount(
     .onConflictDoNothing()
     .returning();
   if (result.length < 1) {
+    const updateValues: Partial<schema.NewFollow> = {};
+    if (options.shares !== undefined) updateValues.shares = options.shares;
+    if (options.notify !== undefined) updateValues.notify = options.notify;
+    if (options.languages !== undefined) {
+      updateValues.languages = options.languages;
+    }
+
+    if (Object.keys(updateValues).length > 0) {
+      const updated = await db
+        .update(schema.follows)
+        .set(updateValues)
+        .where(
+          and(
+            eq(schema.follows.followingId, following.id),
+            eq(schema.follows.followerId, follower.id),
+          ),
+        )
+        .returning();
+      if (updated.length > 0) return updated[0];
+    }
+
     return (
       (await db.query.follows.findFirst({
         where: {
