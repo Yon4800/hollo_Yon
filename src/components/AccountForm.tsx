@@ -45,6 +45,7 @@ export interface AccountFormProps {
     avatarUrl?: string | null;
     coverUrl?: string | null;
     fields?: Array<{ name: string; value: string }>;
+    bot?: boolean;
   };
   errors?: {
     username?: string;
@@ -202,6 +203,12 @@ for(var i=0;i<rows.length;i++){
           checked={props.values?.followingListPublic}
           label="Make following list public"
           hint="Show the list of accounts you follow on your public profile."
+        />
+        <CheckboxField
+          name="bot"
+          checked={props.values?.bot}
+          label="This is a bot account"
+          hint="Label this account as automated or a bot to let others know."
         />
       </FieldSection>
 

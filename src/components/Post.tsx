@@ -141,6 +141,14 @@ export function Post({
           </div>
           <div class="text-xs text-neutral-500 dark:text-neutral-400">
             <span class="select-all">{account.handle}</span>
+            {(account.type === "Service" || account.type === "Application") && (
+              <>
+                {" "}
+                <span class="rounded bg-neutral-200 px-1 py-0.2 text-[10px] font-semibold uppercase tracking-wider text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                  Bot
+                </span>
+              </>
+            )}
             {post.replyTarget != null && (
               <>
                 {" · "}
@@ -389,7 +397,9 @@ function PostContent({ post, featured, baseUrl }: PostContentProps) {
       {post.media.length > 0 && (
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
           {orderMedia(post.media).map((medium) => (
-            <figure class="m-0">
+            <figure
+              class={`m-0 ${medium.type.startsWith("audio/") ? "sm:col-span-2" : ""}`}
+            >
               <Medium
                 medium={medium}
                 language={post.language}
@@ -592,6 +602,68 @@ interface MediumProps {
 
 function Medium({ medium, language, baseUrl }: MediumProps) {
   const linkUrl = proxyUrl(medium.url, baseUrl);
+  if (medium.type.startsWith("audio/")) {
+    if (linkUrl == null) return null;
+    const isMidi =
+      medium.type === "audio/midi" ||
+      medium.type === "audio/x-midi" ||
+      medium.type === "audio/mid" ||
+      medium.url.endsWith(".mid") ||
+      medium.url.endsWith(".midi");
+    if (isMidi) {
+      return (
+        <div class="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+          <span
+            class="i-lucide-music size-6 shrink-0 text-brand-600 dark:text-brand-400"
+            aria-hidden="true"
+          />
+          <div class="min-w-0 flex-1">
+            <p
+              lang={language ?? undefined}
+              class="truncate font-medium text-neutral-900 dark:text-neutral-100"
+            >
+              {medium.description && medium.description.trim() !== ""
+                ? medium.description
+                : "MIDI audio"}
+            </p>
+            <p class="text-xs text-neutral-500 dark:text-neutral-400">
+              MIDI file (.mid)
+            </p>
+          </div>
+          <a
+            href={linkUrl}
+            download
+            class="inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-950 dark:hover:bg-neutral-300"
+          >
+            <span class="i-lucide-download" aria-hidden="true" />
+            Download
+          </a>
+        </div>
+      );
+    }
+    return (
+      <div class="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900">
+        {medium.description && medium.description.trim() !== "" && (
+          <p
+            lang={language ?? undefined}
+            class="mb-2 text-xs font-medium text-neutral-700 dark:text-neutral-300"
+          >
+            {medium.description}
+          </p>
+        )}
+        {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
+        <audio controls preload="metadata" src={linkUrl} class="w-full">
+          <a
+            href={linkUrl}
+            download
+            class="text-xs text-brand-700 hover:underline dark:text-brand-400"
+          >
+            Download audio ({medium.type})
+          </a>
+        </audio>
+      </div>
+    );
+  }
   const thumbnailUrl = medium.thumbnailCleaned
     ? null
     : proxyUrl(medium.thumbnailUrl, baseUrl);

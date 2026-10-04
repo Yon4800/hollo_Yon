@@ -40,7 +40,10 @@ export function serializeMedium(
   baseUrl: URL | string,
   // oxlint-disable-next-line typescript/no-explicit-any
 ): Record<string, any> {
-  const previewSource = medium.thumbnailCleaned ? null : medium.thumbnailUrl;
+  const isAudio = normalizeAttachmentType(medium.type) === "audio";
+  const previewSource =
+    isAudio || medium.thumbnailCleaned ? null : medium.thumbnailUrl;
+  const hasDimensions = medium.width > 0 && medium.height > 0;
   return {
     id: medium.id,
     type: normalizeAttachmentType(medium.type),
@@ -48,23 +51,28 @@ export function serializeMedium(
     preview_url: proxyUrl(previewSource, baseUrl),
     remote_url: null,
     text_url: null,
-    meta: {
-      original: {
-        width: medium.width,
-        height: medium.height,
-        size: `${medium.width}x${medium.height}`,
-        aspect: medium.width / medium.height,
-      },
-      small: medium.thumbnailCleaned
-        ? undefined
-        : {
-            width: medium.thumbnailWidth,
-            height: medium.thumbnailHeight,
-            size: `${medium.thumbnailWidth}x${medium.thumbnailHeight}`,
-            aspect: medium.thumbnailWidth / medium.thumbnailHeight,
-          },
-      focus: { x: 0, y: 0 },
-    },
+    meta: isAudio
+      ? {}
+      : {
+          original: hasDimensions
+            ? {
+                width: medium.width,
+                height: medium.height,
+                size: `${medium.width}x${medium.height}`,
+                aspect: medium.width / medium.height,
+              }
+            : undefined,
+          small:
+            medium.thumbnailCleaned || !hasDimensions
+              ? undefined
+              : {
+                  width: medium.thumbnailWidth,
+                  height: medium.thumbnailHeight,
+                  size: `${medium.thumbnailWidth}x${medium.thumbnailHeight}`,
+                  aspect: medium.thumbnailWidth / medium.thumbnailHeight,
+                },
+          focus: { x: 0, y: 0 },
+        },
     description: medium.description,
     blurhash: null,
   };

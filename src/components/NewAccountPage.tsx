@@ -18,6 +18,7 @@ export interface NewAccountPageProps {
     avatarUrl?: string | null;
     coverUrl?: string | null;
     fields?: Array<{ name: string; value: string }>;
+    bot?: boolean;
   };
   errors?: {
     username?: string;

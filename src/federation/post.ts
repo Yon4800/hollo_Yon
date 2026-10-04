@@ -3,6 +3,7 @@ import * as vocab from "@fedify/vocab";
 import {
   type Announce,
   Article,
+  Audio,
   ChatMessage,
   Collection,
   Create,
@@ -1134,25 +1135,34 @@ export function toObject(
             totalItems: post.likesCount,
           }),
     emojiReactions: getEmojiReactionsUri(post, ctx),
-    attachments: orderMedia(post.media).map((medium) =>
-      medium.type.startsWith("video/")
-        ? new Video({
-            mediaType: medium.type,
-            url: new URL(medium.url),
-            name: medium.description,
-            summary: medium.description,
-            width: medium.width,
-            height: medium.height,
-          })
-        : new Image({
-            mediaType: medium.type,
-            url: new URL(medium.url),
-            name: medium.description,
-            summary: medium.description,
-            width: medium.width,
-            height: medium.height,
-          }),
-    ),
+    attachments: orderMedia(post.media).map((medium) => {
+      if (medium.type.startsWith("video/")) {
+        return new Video({
+          mediaType: medium.type,
+          url: new URL(medium.url),
+          name: medium.description,
+          summary: medium.description,
+          width: medium.width,
+          height: medium.height,
+        });
+      }
+      if (medium.type.startsWith("audio/")) {
+        return new Audio({
+          mediaType: medium.type,
+          url: new URL(medium.url),
+          name: medium.description,
+          summary: medium.description,
+        });
+      }
+      return new Image({
+        mediaType: medium.type,
+        url: new URL(medium.url),
+        name: medium.description,
+        summary: medium.description,
+        width: medium.width,
+        height: medium.height,
+      });
+    }),
     quote:
       shouldPublishQuoteTarget && quoteTargetIri != null
         ? new URL(quoteTargetIri)

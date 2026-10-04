@@ -135,6 +135,7 @@ accounts.post("/", async (c) => {
   const discoverable = form.get("discoverable") != null;
   const expandSpoilers = form.get("expandSpoilers") != null;
   const followingListPublic = form.get("followingListPublic") != null;
+  const bot = form.get("bot") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -156,6 +157,7 @@ accounts.post("/", async (c) => {
           discoverable,
           expandSpoilers,
           followingListPublic,
+          bot,
           language,
           visibility,
           themeColor,
@@ -193,6 +195,7 @@ accounts.post("/", async (c) => {
           discoverable,
           expandSpoilers,
           followingListPublic,
+          bot,
           language,
           visibility,
           themeColor,
@@ -221,6 +224,7 @@ accounts.post("/", async (c) => {
           discoverable,
           expandSpoilers,
           followingListPublic,
+          bot,
           language,
           visibility,
           themeColor,
@@ -297,7 +301,7 @@ accounts.post("/", async (c) => {
           id: accountId,
           iri: fedCtx.getActorUri(username).href,
           instanceHost: handleHost,
-          type: "Person",
+          type: bot ? "Service" : "Person",
           name,
           emojis,
           handle: `@${username}@${handleHost}`,
@@ -500,6 +504,10 @@ function AccountPage(props: AccountPageProps) {
           followingListPublic:
             props.values?.followingListPublic ??
             props.accountOwner.followingListPublic,
+          bot:
+            props.values?.bot ??
+            (props.accountOwner.account.type === "Service" ||
+              props.accountOwner.account.type === "Application"),
           language: props.values?.language ?? props.accountOwner.language,
           visibility: props.values?.visibility ?? props.accountOwner.visibility,
           themeColor: props.values?.themeColor ?? props.accountOwner.themeColor,
@@ -538,6 +546,7 @@ accounts.post("/:id", async (c) => {
   const discoverable = form.get("discoverable") != null;
   const expandSpoilers = form.get("expandSpoilers") != null;
   const followingListPublic = form.get("followingListPublic") != null;
+  const bot = form.get("bot") != null;
   const language = form.get("language")?.toString()?.trim();
   const visibility = form
     .get("visibility")
@@ -560,6 +569,7 @@ accounts.post("/:id", async (c) => {
           discoverable,
           expandSpoilers,
           followingListPublic,
+          bot,
           language,
           visibility,
           themeColor,
@@ -593,6 +603,7 @@ accounts.post("/:id", async (c) => {
           discoverable,
           expandSpoilers,
           followingListPublic,
+          bot,
           language,
           visibility,
           themeColor,
@@ -624,6 +635,7 @@ accounts.post("/:id", async (c) => {
           discoverable,
           expandSpoilers,
           followingListPublic,
+          bot,
           language,
           visibility,
           themeColor,
@@ -706,6 +718,7 @@ accounts.post("/:id", async (c) => {
       await tx
         .update(accountsTable)
         .set({
+          type: bot ? "Service" : "Person",
           name,
           emojis,
           bioHtml: bioResult.html,

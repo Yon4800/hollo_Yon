@@ -140,6 +140,11 @@ export function Profile({ accountOwner, baseUrl }: ProfileProps) {
             >
               {account.handle}
             </span>
+            {(account.type === "Service" || account.type === "Application") && (
+              <span class="rounded bg-neutral-200 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                Bot
+              </span>
+            )}
           </p>
           <p class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-neutral-600 dark:text-neutral-400">
             {accountOwner.followingListPublic ? (
