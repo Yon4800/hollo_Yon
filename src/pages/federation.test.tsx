@@ -76,6 +76,7 @@ describe.sequential("federation force refresh", () => {
           fieldHtmls: {},
           emojis: {},
           sensitive: false,
+          suspended: false,
           successorId: null,
           aliases: [],
           instanceHost: "stale.remote.test",

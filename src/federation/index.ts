@@ -1,4 +1,4 @@
-import type { UnverifiedActivityHandler } from "@fedify/fedify";
+import type { InboxContext, UnverifiedActivityHandler } from "@fedify/fedify";
 import {
   Accept,
   Activity,
@@ -24,6 +24,7 @@ import { getLogger } from "@logtape/logtape";
 import { eq } from "drizzle-orm";
 
 import { db } from "../db";
+import { isActorSuspendedOrDomainBlocked } from "../moderation";
 import { accounts, follows } from "../schema";
 import { updateAccountStats } from "./account";
 import "./actor";
@@ -109,6 +110,21 @@ export const onUnverifiedActivity: UnverifiedActivityHandler<void> = (
   }
 };
 
+function withModerationGuard<T extends Activity>(
+  handler: (ctx: InboxContext<void>, activity: T) => Promise<void>,
+): (ctx: InboxContext<void>, activity: T) => Promise<void> {
+  return async (ctx, activity) => {
+    if (await isActorSuspendedOrDomainBlocked(activity.actorId)) {
+      inboxLogger.debug(
+        "Dropping incoming activity from blocked domain or suspended actor: {actorId}",
+        { actorId: activity.actorId?.href },
+      );
+      return;
+    }
+    await handler(ctx, activity);
+  };
+}
+
 federation
   .setInboxListeners("/@{identifier}/inbox", "/inbox")
   .onUnverifiedActivity(onUnverifiedActivity)
@@ -116,78 +132,118 @@ federation
     const anyOwner = await db.query.accountOwners.findFirst();
     return anyOwner == null ? null : { username: anyOwner.handle };
   })
-  .on(Follow, onFollowed)
-  .on(Accept, async (ctx, accept) => {
-    if (await onQuoteRequestAccepted(ctx, accept)) return;
-    await onFollowAccepted(ctx, accept);
-  })
-  .on(Reject, async (ctx, reject) => {
-    if (await onQuoteRequestRejected(ctx, reject)) return;
-    await onFollowRejected(ctx, reject);
-  })
-  .on(QuoteRequest, onQuoteRequested)
-  .on(Create, async (ctx, create) => {
-    const object = await create.getObject();
-    if (
-      object instanceof Note &&
-      object.replyTargetId != null &&
-      object.attributionId != null &&
-      object.name != null
-    ) {
-      await onVoted(ctx, create);
-    } else if (isPost(object)) {
-      await onPostCreated(ctx, create);
-    } else {
-      inboxLogger.debug("Unsupported object on Create: {object}", { object });
-    }
-  })
-  .on(Like, onLiked)
-  .on(EmojiReact, onEmojiReactionAdded)
-  .on(Announce, async (ctx, announce) => {
-    const object = await announce.getObject();
-    if (isPost(object)) {
-      await onPostShared(ctx, announce);
-    } else {
-      inboxLogger.debug("Unsupported object on Announce: {object}", { object });
-    }
-  })
-  .on(Update, async (ctx, update) => {
-    const object = await update.getObject();
-    if (isActor(object)) {
-      await onAccountUpdated(ctx, update);
-    } else if (isPost(object)) {
-      await onPostUpdated(ctx, update);
-    } else {
-      inboxLogger.debug("Unsupported object on Update: {object}", { object });
-    }
-  })
-  .on(Delete, onDeleted)
-  .on(Add, onPostPinned)
-  .on(Remove, onPostUnpinned)
-  .on(Block, onBlocked)
-  .on(Move, onAccountMoved)
-  .on(Undo, async (ctx, undo) => {
-    const object = await undo.getObject({ crossOrigin: "trust" });
-    if (
-      object instanceof Activity &&
-      object.actorId?.href !== undo.actorId?.href
-    ) {
-      return;
-    }
-    if (object instanceof Follow) {
-      await onUnfollowed(ctx, undo);
-    } else if (object instanceof Block) {
-      await onUnblocked(ctx, undo);
-    } else if (object instanceof Like) {
-      await onUnliked(ctx, undo);
-    } else if (object instanceof EmojiReact) {
-      await onEmojiReactionRemoved(ctx, undo);
-    } else if (object instanceof Announce) {
-      await onPostUnshared(ctx, undo);
-    } else {
-      inboxLogger.debug("Unsupported object on Undo: {object}", { object });
-    }
-  });
+  .on(Follow, withModerationGuard(onFollowed))
+  .on(
+    Accept,
+    withModerationGuard(async (ctx, accept) => {
+      if (await onQuoteRequestAccepted(ctx, accept)) return;
+      await onFollowAccepted(ctx, accept);
+    }),
+  )
+  .on(
+    Reject,
+    withModerationGuard(async (ctx, reject) => {
+      if (await onQuoteRequestRejected(ctx, reject)) return;
+      await onFollowRejected(ctx, reject);
+    }),
+  )
+  .on(QuoteRequest, withModerationGuard(onQuoteRequested))
+  .on(
+    Create,
+    withModerationGuard(async (ctx, create) => {
+      const object = await create.getObject();
+      if (
+        object != null &&
+        "attributionId" in object &&
+        (await isActorSuspendedOrDomainBlocked(object.attributionId))
+      ) {
+        inboxLogger.debug(
+          "Dropping Create with attributed actor from blocked domain or suspended account.",
+        );
+        return;
+      }
+      if (
+        object instanceof Note &&
+        object.replyTargetId != null &&
+        object.attributionId != null &&
+        object.name != null
+      ) {
+        await onVoted(ctx, create);
+      } else if (isPost(object)) {
+        await onPostCreated(ctx, create);
+      } else {
+        inboxLogger.debug("Unsupported object on Create: {object}", { object });
+      }
+    }),
+  )
+  .on(Like, withModerationGuard(onLiked))
+  .on(EmojiReact, withModerationGuard(onEmojiReactionAdded))
+  .on(
+    Announce,
+    withModerationGuard(async (ctx, announce) => {
+      const object = await announce.getObject();
+      if (
+        object != null &&
+        "attributionId" in object &&
+        (await isActorSuspendedOrDomainBlocked(object.attributionId))
+      ) {
+        inboxLogger.debug(
+          "Dropping Announce of post from blocked domain or suspended account.",
+        );
+        return;
+      }
+      if (isPost(object)) {
+        await onPostShared(ctx, announce);
+      } else {
+        inboxLogger.debug("Unsupported object on Announce: {object}", {
+          object,
+        });
+      }
+    }),
+  )
+  .on(
+    Update,
+    withModerationGuard(async (ctx, update) => {
+      const object = await update.getObject();
+      if (isActor(object)) {
+        await onAccountUpdated(ctx, update);
+      } else if (isPost(object)) {
+        await onPostUpdated(ctx, update);
+      } else {
+        inboxLogger.debug("Unsupported object on Update: {object}", { object });
+      }
+    }),
+  )
+  .on(Delete, withModerationGuard(onDeleted))
+  .on(Add, withModerationGuard(onPostPinned))
+  .on(Remove, withModerationGuard(onPostUnpinned))
+  .on(Block, withModerationGuard(onBlocked))
+  .on(Move, withModerationGuard(onAccountMoved))
+  .on(
+    Undo,
+    withModerationGuard(async (ctx, undo) => {
+      const object = await undo.getObject({ crossOrigin: "trust" });
+      if (
+        object instanceof Activity &&
+        object.actorId?.href !== undo.actorId?.href
+      ) {
+        return;
+      }
+      if (object instanceof Follow) {
+        await onUnfollowed(ctx, undo);
+      } else if (object instanceof Block) {
+        await onUnblocked(ctx, undo);
+      } else if (object instanceof Like) {
+        await onUnliked(ctx, undo);
+      } else if (object instanceof EmojiReact) {
+        await onEmojiReactionRemoved(ctx, undo);
+      } else if (object instanceof Announce) {
+        await onPostUnshared(ctx, undo);
+      } else {
+        inboxLogger.debug("Unsupported object on Undo: {object}", { object });
+      }
+    }),
+  );
 
 const outboxLogger = getLogger(["hollo", "federation", "outbox"]);
 

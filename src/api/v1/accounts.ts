@@ -25,6 +25,7 @@ import {
   unfollowAccount,
 } from "../../federation/account";
 import { normalizeHandleForLookup } from "../../instance-host";
+import { getBlockedDomainsSet } from "../../moderation";
 import {
   type AccountOwnerVariables,
   authorizeIfToken,
@@ -313,8 +314,12 @@ app.get(
           })
         : [];
     accountList.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    const blockedDomains =
+      accountList.length > 0 ? await getBlockedDomainsSet() : new Set<string>();
     return c.json(
-      accountList.map((account) => serializeRelationship(account, owner)),
+      accountList.map((account) =>
+        serializeRelationship(account, owner, blockedDomains),
+      ),
     );
   },
 );

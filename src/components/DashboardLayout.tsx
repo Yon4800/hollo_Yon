@@ -7,6 +7,7 @@ export type Menu =
   | "accounts"
   | "emojis"
   | "federation"
+  | "moderation"
   | "thumbnail_cleanup"
   | "auth";
 
@@ -24,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { menu: "accounts", href: "/accounts", label: "Accounts" },
   { menu: "emojis", href: "/emojis", label: "Custom emojis" },
   { menu: "federation", href: "/federation", label: "Federation" },
+  { menu: "moderation", href: "/moderation", label: "Moderation" },
   {
     menu: "thumbnail_cleanup",
     href: "/thumbnail_cleanup",

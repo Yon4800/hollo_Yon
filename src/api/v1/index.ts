@@ -17,6 +17,7 @@ import {
 import { uuid } from "../../uuid";
 import accounts from "./accounts";
 import apps from "./apps";
+import domain_blocks from "./domain_blocks";
 import featured_tags from "./featured_tags";
 import follow_requests from "./follow_requests";
 import instance from "./instance";
@@ -34,6 +35,7 @@ const app = new Hono<{ Variables: AccountOwnerVariables }>();
 
 app.route("/apps", apps);
 app.route("/accounts", accounts);
+app.route("/domain_blocks", domain_blocks);
 app.route("/featured_tags", featured_tags);
 app.route("/follow_requests", follow_requests);
 app.route("/instance", instance);

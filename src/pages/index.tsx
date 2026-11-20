@@ -8,6 +8,7 @@ import federation from "./federation";
 import home from "./home";
 import login from "./login";
 import logout from "./logout";
+import moderation from "./moderation";
 import profile from "./profile";
 import setup from "./setup";
 import tags from "./tags";
@@ -25,6 +26,7 @@ page.route("/auth", auth);
 page.route("/accounts", accounts);
 page.route("/emojis", emojis);
 page.route("/federation", federation);
+page.route("/moderation", moderation);
 page.route("/thumbnail_cleanup", thumbnail_cleanup);
 page.route("/tags", tags);
 

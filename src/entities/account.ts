@@ -1,5 +1,6 @@
 import { getInstanceHost } from "../instance-host";
 import { proxyUrl } from "../media-proxy";
+import { isDomainInBlockedSet } from "../moderation";
 import type { Account, AccountOwner, Block, Follow, Mute } from "../schema";
 import type { Uuid } from "../uuid";
 import { sanitizeHtml } from "../xss";
@@ -53,6 +54,7 @@ export function serializeAccount(
       value,
       verified_at: null,
     })),
+    ...(account.suspended ? { suspended: true } : {}),
   };
 }
 
@@ -90,6 +92,7 @@ export function serializeRelationship(
     blockedBy: Block[];
   },
   currentAccountOwner: { id: Uuid },
+  blockedDomains?: ReadonlySet<string>,
 ): Record<string, unknown> {
   const following = account.followers.find(
     (f) => f.followerId === currentAccountOwner.id,
@@ -122,7 +125,9 @@ export function serializeRelationship(
     muting_notifications: muting?.notifications === true,
     requested: following != null && following.approved == null,
     requested_by: followedBy != null && followedBy.approved == null,
-    domain_blocking: false, // TODO
+    domain_blocking: blockedDomains
+      ? isDomainInBlockedSet(account.instanceHost, blockedDomains)
+      : false,
     endorsed: false, // TODO
     note: "", // TODO
   };

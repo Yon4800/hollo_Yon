@@ -13,6 +13,7 @@ import { uniq } from "es-toolkit";
 
 import { db } from "../db";
 import { importHolloJwk } from "../jwk";
+import { getBlockedDomainsSet, isDomainInBlockedSet } from "../moderation";
 import { follows, likes, posts } from "../schema";
 import { toTemporalInstant } from "./date";
 import { federation } from "./federation";
@@ -116,6 +117,7 @@ federation
         where: {
           RAW: (accounts, { and, eq, ilike, inArray, isNotNull }) =>
             and(
+              eq(accounts.suspended, false),
               inArray(
                 accounts.id,
                 db
@@ -137,7 +139,15 @@ federation
         orderBy: (accounts) => [accounts.id],
         limit: offset == null ? undefined : 41,
       });
-      const items = offset == null ? followers : followers.slice(0, 40);
+      const blockedDomains = await getBlockedDomainsSet();
+      const allowedFollowers =
+        blockedDomains.size > 0
+          ? followers.filter(
+              (f) => !isDomainInBlockedSet(f.instanceHost, blockedDomains),
+            )
+          : followers;
+      const items =
+        offset == null ? allowedFollowers : allowedFollowers.slice(0, 40);
       const result = {
         items: items.map((f) => ({
           id: new URL(f.iri),

@@ -31,6 +31,7 @@ describe("Post", () => {
     successorId: null,
     aliases: [],
     sensitive: false,
+    suspended: false,
   };
 
   const basePost: PostForView = {

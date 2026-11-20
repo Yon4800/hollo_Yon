@@ -31,6 +31,7 @@ describe("Profile", () => {
     successorId: null,
     aliases: [],
     sensitive: false,
+    suspended: false,
   };
 
   const baseOwner: AccountOwner = {

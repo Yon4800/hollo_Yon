@@ -31,6 +31,7 @@ function createMockAccount(fetched: Date | null): Account {
     fieldHtmls: {},
     emojis: {},
     sensitive: false,
+    suspended: false,
     successorId: null,
     aliases: [],
     instanceHost: "example.com",

@@ -139,6 +139,7 @@ export const accounts = pgTable(
       .default({})
       .$type<Record<string, string>>(),
     sensitive: boolean("sensitive").notNull().default(false),
+    suspended: boolean("suspended").notNull().default(false),
     successorId: uuid("successor_id")
       .$type<Uuid>()
       .references((): AnyPgColumn => accounts.id, { onDelete: "cascade" }),
@@ -944,6 +945,17 @@ export const blocks = pgTable(
 
 export type Block = typeof blocks.$inferSelect;
 export type NewBlock = typeof blocks.$inferInsert;
+
+export const domainBlocks = pgTable("domain_blocks", {
+  domain: text("domain").primaryKey(),
+  reason: text("reason"),
+  created: timestamp("created", { withTimezone: true })
+    .notNull()
+    .default(currentTimestamp),
+});
+
+export type DomainBlock = typeof domainBlocks.$inferSelect;
+export type NewDomainBlock = typeof domainBlocks.$inferInsert;
 
 export const customEmojis = pgTable("custom_emojis", {
   shortcode: text("shortcode").primaryKey(),

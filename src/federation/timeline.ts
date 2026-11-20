@@ -3,6 +3,7 @@ import { getLogger } from "@logtape/logtape";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import type { DatabaseLike } from "../db";
+import { getBlockedDomainsSet, isDomainInBlockedSet } from "../moderation";
 import type {
   Account,
   AccountOwner,
@@ -204,6 +205,25 @@ export async function appendPostToTimelines(
     replyTarget: Post | null;
   },
 ): Promise<void> {
+  const authorIds = [post.accountId];
+  if (post.sharing != null) authorIds.push(post.sharing.accountId);
+  const authorAccounts = await db.query.accounts.findMany({
+    where: { id: { in: authorIds } },
+    columns: { id: true, suspended: true, instanceHost: true },
+  });
+  const blockedDomains = await getBlockedDomainsSet();
+  for (const author of authorAccounts) {
+    if (
+      author.suspended ||
+      isDomainInBlockedSet(author.instanceHost, blockedDomains)
+    ) {
+      logger.debug(
+        "Skipping timeline append for post {postId} from suspended/blocked account {accountId}.",
+        { postId: post.id, accountId: author.id },
+      );
+      return;
+    }
+  }
   const owners = await db.query.accountOwners.findMany({
     with: {
       account: {
